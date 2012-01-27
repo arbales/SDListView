@@ -137,11 +137,6 @@
 	  nil]];
 }
 
-- (void) viewDidEndLiveResize {
-	[super viewDidEndLiveResize];
-	[self _layout];
-}
-
 // MARK: -
 // MARK: Rebuilding content and layout
 
@@ -266,6 +261,7 @@
 	NSInteger contentCount = [listViewItems count];
 	
 	CGFloat scrollViewWidth = NSWidth([[self enclosingScrollView] frame]);
+    CGFloat width = scrollViewWidth;
     
     // calculate vertical scroller size
     NSScroller *verticalScroller = [[self enclosingScrollView] verticalScroller];
@@ -273,14 +269,14 @@
     if ([scrollerClass respondsToSelector:@selector(scrollerWidthForControlSize:scrollerStyle:)]) { // >= OS X 10.7
         NSScrollerStyle scrollerStyle = [verticalScroller scrollerStyle];
         if (scrollerStyle != NSScrollerStyleOverlay) { // don't shrink a view if the scroller is an overlay
-            scrollViewWidth -= [scrollerClass scrollerWidthForControlSize:[verticalScroller controlSize]
-                                                            scrollerStyle:scrollerStyle];
+            width -= [scrollerClass scrollerWidthForControlSize:[verticalScroller controlSize]
+                                                  scrollerStyle:scrollerStyle];
         }
     }
     else { // < OS X 10.7
-        scrollViewWidth -= [scrollerClass  scrollerWidthForControlSize:[verticalScroller controlSize]];
+        width -= [scrollerClass  scrollerWidthForControlSize:[verticalScroller controlSize]];
     }
-	CGFloat width = scrollViewWidth;
+	
     
 	CGFloat totalHeight = 0.0;
 	
@@ -294,7 +290,7 @@
 	
 	totalHeight += self.topPadding + self.bottomPadding;
 	
-	[self setFrameSize:NSMakeSize(width, totalHeight)];
+	[super setFrameSize:NSMakeSize(scrollViewWidth, totalHeight)];
 	
 	CGFloat y = 0.0 + self.bottomPadding;
 	
@@ -329,11 +325,13 @@
 // MARK: -
 // MARK: Drawing
 
-- (void)drawRect:(NSRect)dirtyRect {
-//	[[[NSColor greenColor] colorWithAlphaComponent:0.5] drawSwatchInRect:[self bounds]];
-	
+- (void) drawRect:(NSRect)dirtyRect {
 	if ([self.content count] == 0)
 		return;
+}
+
+- (void) setFrameSize:(NSSize)newSize {
+    [self _layout]; // this method will call super's -setFrameSize:
 }
 
 // MARK: -
