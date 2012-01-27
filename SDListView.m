@@ -23,6 +23,8 @@
 
 @property (readwrite, retain) NSMutableArray *observers;
 
+- (void) _init;
+
 - (void) _beginObservingContent;
 - (void) _contentDidChange;
 
@@ -63,14 +65,16 @@
 	}
 }
 
+- (id)initWithCoder:(NSCoder *)aDecoder {
+    if (self = [super initWithCoder:aDecoder]) {
+        [self _init];
+    }
+    return self;
+}
+
 - (id)initWithFrame:(NSRect)frame {
 	if (self = [super initWithFrame:frame]) {
-		self.observers = [NSMutableArray array];
-		listViewItems = [[NSMutableArray array] retain];
-		viewsThatShouldNotAnimate = [[NSMutableArray array] retain];
-		selectionFellOfSide = 1;
-		
-		[self _beginObservingContent];
+        [self _init];
 	}
 	return self;
 }
@@ -96,6 +100,15 @@
 	});
 }
 
+- (void) _init {
+    self.observers = [NSMutableArray array];
+    listViewItems = [[NSMutableArray array] retain];
+    viewsThatShouldNotAnimate = [[NSMutableArray array] retain];
+    selectionFellOfSide = 1;
+    
+    [self _beginObservingContent];
+}
+
 // MARK: -
 // MARK: Dynamic Observing
 
@@ -103,25 +116,23 @@
 	[observers addObjectsFromArray:
 	 [NSArray arrayWithObjects:
 	  [self observeKeyPath:@"content"
-				   options:(0)
-				  weakSelf:self
-				   handler:^(id object, NSDictionary *change, id self) {
-					   [[self class] cancelPreviousPerformRequestsWithTarget:self
-																	selector:@selector(_contentDidChange)
-																	  object:nil];
-					   
-					   [self performSelector:@selector(_contentDidChange)
-								  withObject:nil
-								  afterDelay:0.15];
-				   }]
+                   options:(0)
+                   handler:^(id object, NSDictionary *change) {
+                       [[self class] cancelPreviousPerformRequestsWithTarget:self
+                                                                    selector:@selector(_contentDidChange)
+                                                                      object:nil];
+                       
+                       [self performSelector:@selector(_contentDidChange)
+                                  withObject:nil
+                                  afterDelay:0.15];
+                   }]
 	  ,
 	  [self observeKeyPath:@"sortDescriptors"
-				   options:(0)
-				  weakSelf:self
-				   handler:^(id object, NSDictionary *change, id self) {
-					   [self _sortContent];
-					   [self _layout];
-				   }]
+                   options:(0)
+                   handler:^(id object, NSDictionary *change) {
+                       [self _sortContent];
+                       [self _layout];
+                   }]
 	  ,
 	  nil]];
 }
