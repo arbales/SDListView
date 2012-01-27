@@ -259,18 +259,29 @@
  * (4) set their new locations (using -animator proxy)
  */
 - (void) _layout {
+// TODO: Call layout when scroller style changes
 //	CGFloat restoreToOffset = NSMaxY([[self enclosingScrollView] documentVisibleRect]);
 //	NSLog(@"%f", restoreToOffset);
 	
 	NSInteger contentCount = [listViewItems count];
 	
 	CGFloat scrollViewWidth = NSWidth([[self enclosingScrollView] frame]);
-	scrollViewWidth -= [[[[self enclosingScrollView] verticalScroller] class] scrollerWidth];
-	
+    
+    // calculate vertical scroller size
+    NSScroller *verticalScroller = [[self enclosingScrollView] verticalScroller];
+    Class scrollerClass = [verticalScroller class];
+    if ([scrollerClass respondsToSelector:@selector(scrollerWidthForControlSize:scrollerStyle:)]) { // >= OS X 10.7
+        NSScrollerStyle scrollerStyle = [verticalScroller scrollerStyle];
+        if (scrollerStyle != NSScrollerStyleOverlay) { // don't shrink a view if the scroller is an overlay
+            scrollViewWidth -= [scrollerClass scrollerWidthForControlSize:[verticalScroller controlSize]
+                                                            scrollerStyle:scrollerStyle];
+        }
+    }
+    else { // < OS X 10.7
+        scrollViewWidth -= [scrollerClass  scrollerWidthForControlSize:[verticalScroller controlSize]];
+    }
 	CGFloat width = scrollViewWidth;
-	// something adds those 2 pixels, I don't know where they come from - if I don't subtract them here, the list
-	// is 2 pixels wider than it should be and it's scrollable horizontally, even though it shouldn't be - psionides
-	width -= 2.0;
+    
 	CGFloat totalHeight = 0.0;
 	
 	CGFloat *heights = malloc(sizeof(CGFloat) * contentCount);
