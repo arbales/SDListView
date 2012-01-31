@@ -22,7 +22,7 @@
 	NSMutableArray *observers;
 	
 	NSMutableArray *listViewItems;
-	NSMutableArray *viewsThatShouldNotAnimate;
+	NSMutableArray *viewsThatShouldOnlyFadeIn;
 	
 	CGFloat topPadding;
 	CGFloat bottomPadding;

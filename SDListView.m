@@ -84,7 +84,7 @@
 	[sortDescriptors release], sortDescriptors = nil;
 	[content release], content = nil;
 	[listViewItems release];
-	[viewsThatShouldNotAnimate release];
+	[viewsThatShouldOnlyFadeIn release];
 	
 	[super dealloc];
 }
@@ -103,7 +103,7 @@
 - (void) _init {
     self.observers = [NSMutableArray array];
     listViewItems = [[NSMutableArray array] retain];
-    viewsThatShouldNotAnimate = [[NSMutableArray array] retain];
+    viewsThatShouldOnlyFadeIn = [[NSMutableArray array] retain];
     selectionFellOfSide = 1;
     
     [self _beginObservingContent];
@@ -213,7 +213,7 @@
 	for (SDListViewItem *newItem in newlyCreatedItems) {
 		NSView *view = newItem.view;
 		
-		[viewsThatShouldNotAnimate addObject:view];
+		[viewsThatShouldOnlyFadeIn addObject:view];
 		[view setAlphaValue:0.0];
 		
 		CABasicAnimation *anim = [view animationForKey:@"frameSize"];
@@ -255,12 +255,8 @@
  */
 - (void) _layout {
 // TODO: Call layout when scroller style changes
-//	CGFloat restoreToOffset = NSMaxY([[self enclosingScrollView] documentVisibleRect]);
-//	NSLog(@"%f", restoreToOffset);
-	
-	NSInteger contentCount = [listViewItems count];
-	
-	CGFloat scrollViewWidth = NSWidth([[self enclosingScrollView] frame]);
+    NSScrollView *scrollView = [self enclosingScrollView];
+	CGFloat scrollViewWidth = [scrollView frame].size.width;
     CGFloat width = scrollViewWidth;
     
     // calculate vertical scroller size
@@ -277,49 +273,50 @@
         width -= [scrollerClass  scrollerWidthForControlSize:[verticalScroller controlSize]];
     }
 	
-    
-	CGFloat totalHeight = 0.0;
+	CGFloat *heights = malloc(sizeof(CGFloat) * [listViewItems count]);
 	
-	CGFloat *heights = malloc(sizeof(CGFloat) * contentCount);
-	
-	for (NSInteger i = 0; i < contentCount; i++) {
-		SDListViewItem *item = [listViewItems objectAtIndex:i];
-		heights[i] = [item heightForGivenWidth:width];
-		totalHeight += heights[i];
-	}
+    __block CGFloat totalHeight = 0.0;
+    [listViewItems enumerateObjectsUsingBlock: ^ (SDListViewItem *item, NSUInteger i, BOOL *stop) {
+        heights[i] = [item heightForGivenWidth:width];
+        totalHeight += heights[i];
+    }];
 	
 	totalHeight += self.topPadding + self.bottomPadding;
 	
 	[super setFrameSize:NSMakeSize(scrollViewWidth, totalHeight)];
 	
-	CGFloat y = 0.0 + self.bottomPadding;
-	
-	for (NSInteger i = 0; i < contentCount; i++) {
-		SDListViewItem *item = [listViewItems objectAtIndex:i];
-		
-		CGFloat height = heights[i];
-		
-		NSRect newItemFrame = NSMakeRect(0.0, y, width, height);
-		
-		BOOL shouldNotAnimate = [viewsThatShouldNotAnimate containsObject: item.view];
-		
-		if (shouldNotAnimate) {
-			[item.view setFrame:newItemFrame];
-			[[item.view animator] setAlphaValue:1.0];
-		}
-		else {
-			[[item.view animator] setFrame:newItemFrame];
-		}
-
-		// without this, manual layout isn't done until first window resize - psionides
-		[item.view resizeSubviewsWithOldSize: item.view.frame.size];
-
-		y += height;
-	}
-	
+    // layout subviews (cells)
+    NSRect visibleRect = [scrollView documentVisibleRect];
+    __block CGFloat y = 0.0 + self.bottomPadding;
+    [listViewItems enumerateObjectsUsingBlock: ^ (SDListViewItem *item, NSUInteger i, BOOL *stop) {
+        CGFloat height = heights[i];
+        NSRect newItemFrame = NSMakeRect(0.0, y, width, height);
+        
+        if ([self inLiveResize] ||
+            y+height < visibleRect.origin.y || 
+            y > visibleRect.origin.y+visibleRect.size.height) {
+            item.view.frame = newItemFrame; // don't animate views when in live resize mode or views that are not visible
+            item.view.alphaValue = 1.0; // make sure new items are visible
+        }
+        else {
+            if ([viewsThatShouldOnlyFadeIn containsObject:item.view]) {
+                item.view.frame = newItemFrame;
+                [[item.view animator] setAlphaValue:1.0]; // new items should just fade in
+            }
+            else {
+                [[item.view animator] setFrame:newItemFrame];
+            }
+        }
+        
+        // without this, manual layout isn't done until first window resize - psionides
+        [item.view resizeSubviewsWithOldSize:item.view.frame.size];
+        
+        y += height;
+    }];
+    
 	free(heights);
 	
-	[viewsThatShouldNotAnimate removeAllObjects];
+	[viewsThatShouldOnlyFadeIn removeAllObjects];
 }
 
 // MARK: -
