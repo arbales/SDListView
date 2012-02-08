@@ -288,6 +288,8 @@
     // layout subviews (cells)
     NSRect visibleRect = [scrollView documentVisibleRect];
     __block CGFloat y = 0.0 + self.bottomPadding;
+    
+    [NSAnimationContext beginGrouping];
     [listViewItems enumerateObjectsUsingBlock: ^ (SDListViewItem *item, NSUInteger i, BOOL *stop) {
         CGFloat height = heights[i];
         NSRect newItemFrame = NSMakeRect(0.0, y, width, height);
@@ -303,16 +305,13 @@
                 item.view.frame = newItemFrame;
                 [[item.view animator] setAlphaValue:1.0]; // new items should just fade in
             }
-            else {
-                [[item.view animator] setFrame:newItemFrame];
-            }
+            
+            [[item.view animator] setFrame:newItemFrame];
         }
-        
-        // without this, manual layout isn't done until first window resize - psionides
-        [item.view resizeSubviewsWithOldSize:item.view.frame.size];
         
         y += height;
     }];
+    [NSAnimationContext endGrouping];
     
 	free(heights);
 	
