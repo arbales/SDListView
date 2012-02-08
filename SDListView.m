@@ -9,8 +9,6 @@
 
 #import <QuartzCore/QuartzCore.h>
 
-#import "SDKVO.h"
-
 #import "SDListViewItem.h"
 
 #import "SDListViewItem+Private.h"
@@ -20,8 +18,6 @@
 @end
 
 @interface SDListView ()
-
-@property (readwrite, retain) NSMutableArray *observers;
 
 - (void) _init;
 
@@ -44,8 +40,6 @@
 @synthesize content;
 @synthesize prototypeItem;
 @synthesize sortDescriptors;
-
-@synthesize observers;
 
 @synthesize topPadding;
 @synthesize bottomPadding;
@@ -80,7 +74,7 @@
 }
 
 - (void) dealloc {
-	[observers release];
+	[self removeObserver:self forKeyPath:nil];
 	[sortDescriptors release], sortDescriptors = nil;
 	[content release], content = nil;
 	[listViewItems release];
@@ -101,7 +95,6 @@
 }
 
 - (void) _init {
-    self.observers = [NSMutableArray array];
     listViewItems = [[NSMutableArray array] retain];
     viewsThatShouldOnlyFadeIn = [[NSMutableArray array] retain];
     selectionFellOfSide = 1;
@@ -112,29 +105,31 @@
 // MARK: -
 // MARK: Dynamic Observing
 
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if ([keyPath isEqualToString:@"content"]) {
+        [[self class] cancelPreviousPerformRequestsWithTarget:self
+                                                     selector:@selector(_contentDidChange)
+                                                       object:nil];
+        
+        [self performSelector:@selector(_contentDidChange)
+                   withObject:nil
+                   afterDelay:0.15];
+    }
+    else if ([keyPath isEqualToString:@"sortDescriptors"]) {
+        [self _sortContent];
+        [self _layout];
+    }
+}
+
 - (void) _beginObservingContent {
-	[observers addObjectsFromArray:
-	 [NSArray arrayWithObjects:
-	  [self observeKeyPath:@"content"
-                   options:(0)
-                   handler:^(id object, NSDictionary *change) {
-                       [[self class] cancelPreviousPerformRequestsWithTarget:self
-                                                                    selector:@selector(_contentDidChange)
-                                                                      object:nil];
-                       
-                       [self performSelector:@selector(_contentDidChange)
-                                  withObject:nil
-                                  afterDelay:0.15];
-                   }]
-	  ,
-	  [self observeKeyPath:@"sortDescriptors"
-                   options:(0)
-                   handler:^(id object, NSDictionary *change) {
-                       [self _sortContent];
-                       [self _layout];
-                   }]
-	  ,
-	  nil]];
+    [self addObserver:self
+           forKeyPath:@"content"
+              options:0
+              context:nil];
+    [self addObserver:self
+           forKeyPath:@"sortDescriptors"
+              options:0
+              context:nil];
 }
 
 // MARK: -
