@@ -74,7 +74,9 @@
 }
 
 - (void) dealloc {
-	[self removeObserver:self forKeyPath:nil];
+	[self removeObserver:self forKeyPath:@"content"];
+    [self removeObserver:self forKeyPath:@"sortDescriptors"];
+    
 	[sortDescriptors release], sortDescriptors = nil;
 	[content release], content = nil;
 	[listViewItems release];
