@@ -9,8 +9,6 @@
 
 #import <QuartzCore/QuartzCore.h>
 
-#import "SDKVO.h"
-
 #import "SDListViewItem.h"
 
 #import "SDListViewItem+Private.h"
@@ -21,7 +19,7 @@
 
 @interface SDListView ()
 
-@property (readwrite, retain) NSMutableArray *observers;
+- (void) _init;
 
 - (void) _beginObservingContent;
 - (void) _contentDidChange;
@@ -43,8 +41,6 @@
 @synthesize prototypeItem;
 @synthesize sortDescriptors;
 
-@synthesize observers;
-
 @synthesize topPadding;
 @synthesize bottomPadding;
 
@@ -63,24 +59,28 @@
 	}
 }
 
+- (id)initWithCoder:(NSCoder *)aDecoder {
+    if (self = [super initWithCoder:aDecoder]) {
+        [self _init];
+    }
+    return self;
+}
+
 - (id)initWithFrame:(NSRect)frame {
 	if (self = [super initWithFrame:frame]) {
-		self.observers = [NSMutableArray array];
-		listViewItems = [[NSMutableArray array] retain];
-		viewsThatShouldNotAnimate = [[NSMutableArray array] retain];
-		selectionFellOfSide = 1;
-		
-		[self _beginObservingContent];
+        [self _init];
 	}
 	return self;
 }
 
 - (void) dealloc {
-	[observers release];
+	[self removeObserver:self forKeyPath:@"content"];
+    [self removeObserver:self forKeyPath:@"sortDescriptors"];
+    
 	[sortDescriptors release], sortDescriptors = nil;
 	[content release], content = nil;
 	[listViewItems release];
-	[viewsThatShouldNotAnimate release];
+	[viewsThatShouldOnlyFadeIn release];
 	
 	[super dealloc];
 }
@@ -96,39 +96,42 @@
 	});
 }
 
+- (void) _init {
+    listViewItems = [[NSMutableArray array] retain];
+    viewsThatShouldOnlyFadeIn = [[NSMutableArray array] retain];
+    selectionFellOfSide = 1;
+    
+    [self _beginObservingContent];
+}
+
 // MARK: -
 // MARK: Dynamic Observing
 
-- (void) _beginObservingContent {
-	[observers addObjectsFromArray:
-	 [NSArray arrayWithObjects:
-	  [self observeKeyPath:@"content"
-				   options:(0)
-				  weakSelf:self
-				   handler:^(id object, NSDictionary *change, id self) {
-					   [[self class] cancelPreviousPerformRequestsWithTarget:self
-																	selector:@selector(_contentDidChange)
-																	  object:nil];
-					   
-					   [self performSelector:@selector(_contentDidChange)
-								  withObject:nil
-								  afterDelay:0.15];
-				   }]
-	  ,
-	  [self observeKeyPath:@"sortDescriptors"
-				   options:(0)
-				  weakSelf:self
-				   handler:^(id object, NSDictionary *change, id self) {
-					   [self _sortContent];
-					   [self _layout];
-				   }]
-	  ,
-	  nil]];
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if ([keyPath isEqualToString:@"content"]) {
+        [[self class] cancelPreviousPerformRequestsWithTarget:self
+                                                     selector:@selector(_contentDidChange)
+                                                       object:nil];
+        
+        [self performSelector:@selector(_contentDidChange)
+                   withObject:nil
+                   afterDelay:0.15];
+    }
+    else if ([keyPath isEqualToString:@"sortDescriptors"]) {
+        [self _sortContent];
+        [self _layout];
+    }
 }
 
-- (void) viewDidEndLiveResize {
-	[super viewDidEndLiveResize];
-	[self _layout];
+- (void) _beginObservingContent {
+    [self addObserver:self
+           forKeyPath:@"content"
+              options:0
+              context:nil];
+    [self addObserver:self
+           forKeyPath:@"sortDescriptors"
+              options:0
+              context:nil];
 }
 
 // MARK: -
@@ -207,7 +210,7 @@
 	for (SDListViewItem *newItem in newlyCreatedItems) {
 		NSView *view = newItem.view;
 		
-		[viewsThatShouldNotAnimate addObject:view];
+		[viewsThatShouldOnlyFadeIn addObject:view];
 		[view setAlphaValue:0.0];
 		
 		CABasicAnimation *anim = [view animationForKey:@"frameSize"];
@@ -248,70 +251,80 @@
  * (4) set their new locations (using -animator proxy)
  */
 - (void) _layout {
-//	CGFloat restoreToOffset = NSMaxY([[self enclosingScrollView] documentVisibleRect]);
-//	NSLog(@"%f", restoreToOffset);
+// TODO: Call layout when scroller style changes
+    NSScrollView *scrollView = [self enclosingScrollView];
+	CGFloat scrollViewWidth = [scrollView frame].size.width;
+    CGFloat width = scrollViewWidth;
+    
+    // calculate vertical scroller size
+    NSScroller *verticalScroller = [[self enclosingScrollView] verticalScroller];
+    Class scrollerClass = [verticalScroller class];
+    if ([scrollerClass respondsToSelector:@selector(scrollerWidthForControlSize:scrollerStyle:)]) { // >= OS X 10.7
+        NSScrollerStyle scrollerStyle = [verticalScroller scrollerStyle];
+        if (scrollerStyle != NSScrollerStyleOverlay) { // don't shrink a view if the scroller is an overlay
+            width -= [scrollerClass scrollerWidthForControlSize:[verticalScroller controlSize]
+                                                  scrollerStyle:scrollerStyle];
+        }
+    }
+    else { // < OS X 10.7
+        width -= [scrollerClass  scrollerWidthForControlSize:[verticalScroller controlSize]];
+    }
 	
-	NSInteger contentCount = [listViewItems count];
+	CGFloat *heights = malloc(sizeof(CGFloat) * [listViewItems count]);
 	
-	CGFloat scrollViewWidth = NSWidth([[self enclosingScrollView] frame]);
-	scrollViewWidth -= [[[[self enclosingScrollView] verticalScroller] class] scrollerWidth];
-	
-	CGFloat width = scrollViewWidth;
-	// something adds those 2 pixels, I don't know where they come from - if I don't subtract them here, the list
-	// is 2 pixels wider than it should be and it's scrollable horizontally, even though it shouldn't be - psionides
-	width -= 2.0;
-	CGFloat totalHeight = 0.0;
-	
-	CGFloat *heights = malloc(sizeof(CGFloat) * contentCount);
-	
-	for (NSInteger i = 0; i < contentCount; i++) {
-		SDListViewItem *item = [listViewItems objectAtIndex:i];
-		heights[i] = [item heightForGivenWidth:width];
-		totalHeight += heights[i];
-	}
+    __block CGFloat totalHeight = 0.0;
+    [listViewItems enumerateObjectsUsingBlock: ^ (SDListViewItem *item, NSUInteger i, BOOL *stop) {
+        heights[i] = [item heightForGivenWidth:width];
+        totalHeight += heights[i];
+    }];
 	
 	totalHeight += self.topPadding + self.bottomPadding;
 	
-	[self setFrameSize:NSMakeSize(width, totalHeight)];
+	[super setFrameSize:NSMakeSize(scrollViewWidth, totalHeight)];
 	
-	CGFloat y = 0.0 + self.bottomPadding;
-	
-	for (NSInteger i = 0; i < contentCount; i++) {
-		SDListViewItem *item = [listViewItems objectAtIndex:i];
-		
-		CGFloat height = heights[i];
-		
-		NSRect newItemFrame = NSMakeRect(0.0, y, width, height);
-		
-		BOOL shouldNotAnimate = [viewsThatShouldNotAnimate containsObject: item.view];
-		
-		if (shouldNotAnimate) {
-			[item.view setFrame:newItemFrame];
-			[[item.view animator] setAlphaValue:1.0];
-		}
-		else {
-			[[item.view animator] setFrame:newItemFrame];
-		}
-
-		// without this, manual layout isn't done until first window resize - psionides
-		[item.view resizeSubviewsWithOldSize: item.view.frame.size];
-
-		y += height;
-	}
-	
+    // layout subviews (cells)
+    NSRect visibleRect = [scrollView documentVisibleRect];
+    __block CGFloat y = 0.0 + self.bottomPadding;
+    
+    [NSAnimationContext beginGrouping];
+    [listViewItems enumerateObjectsUsingBlock: ^ (SDListViewItem *item, NSUInteger i, BOOL *stop) {
+        CGFloat height = heights[i];
+        NSRect newItemFrame = NSMakeRect(0.0, y, width, height);
+        
+        if ([self inLiveResize] ||
+            y+height < visibleRect.origin.y || 
+            y > visibleRect.origin.y+visibleRect.size.height) {
+            item.view.frame = newItemFrame; // don't animate views when in live resize mode or views that are not visible
+            item.view.alphaValue = 1.0; // make sure new items are visible
+        }
+        else {
+            if ([viewsThatShouldOnlyFadeIn containsObject:item.view]) {
+                item.view.frame = newItemFrame;
+                [[item.view animator] setAlphaValue:1.0]; // new items should just fade in
+            }
+            
+            [[item.view animator] setFrame:newItemFrame];
+        }
+        
+        y += height;
+    }];
+    [NSAnimationContext endGrouping];
+    
 	free(heights);
 	
-	[viewsThatShouldNotAnimate removeAllObjects];
+	[viewsThatShouldOnlyFadeIn removeAllObjects];
 }
 
 // MARK: -
 // MARK: Drawing
 
-- (void)drawRect:(NSRect)dirtyRect {
-//	[[[NSColor greenColor] colorWithAlphaComponent:0.5] drawSwatchInRect:[self bounds]];
-	
+- (void) drawRect:(NSRect)dirtyRect {
 	if ([self.content count] == 0)
 		return;
+}
+
+- (void) setFrameSize:(NSSize)newSize {
+    [self _layout]; // this method will call super's -setFrameSize:
 }
 
 // MARK: -
